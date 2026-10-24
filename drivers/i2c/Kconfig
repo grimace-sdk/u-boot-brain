@@ -180,6 +180,12 @@ config SYS_I2C_MESON
 	  internal buffer holding up to 8 bytes for transfers and supports
 	  both 7-bit and 10-bit addresses.
 
+config SYS_I2C_MXS
+	bool "Freescale i.MX23/i.MX28 I2C (legacy)"
+	depends on ARCH_MX23 || ARCH_MX28
+	help
+	  Legacy driver for the i.MX23/i.MX28 I2C controllers.
+
 config SYS_I2C_MXC
 	bool "NXP MXC I2C driver"
 	help
