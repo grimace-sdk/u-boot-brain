@@ -36,6 +36,8 @@
 
 #define	MXSMMC_MAX_TIMEOUT	10000
 #define MXSMMC_SMALL_TRANSFER	512
+#define MXSMMC_DESCRIPTOR_BLOCKS	127
+#define MXSMMC_DESCRIPTORS	16
 
 #if !CONFIG_IS_ENABLED(DM_MMC)
 struct mxsmmc_priv {
@@ -44,6 +46,8 @@ struct mxsmmc_priv {
 	int			(*mmc_cd)(int);
 	struct mmc_config	cfg;	/* mmc configuration */
 	struct mxs_dma_desc	*desc;
+	struct mxs_dma_desc	*chain[MXSMMC_DESCRIPTORS];
+	unsigned int		chain_length;
 	uint32_t		buswidth;
 	struct mxs_ssp_regs	*regs;
 };
@@ -68,6 +72,8 @@ struct mxsmmc_plat {
 struct mxsmmc_priv {
 	int clkid;
 	struct mxs_dma_desc	*desc;
+	struct mxs_dma_desc	*chain[MXSMMC_DESCRIPTORS];
+	unsigned int		chain_length;
 	u32			buswidth;
 	struct mxs_ssp_regs	*regs;
 	unsigned int            dma_channel;
@@ -176,6 +182,13 @@ int mxsmmc_initialize(struct bd_info *bis, int id, int (*wp)(int),
 		free(priv);
 		return -ENOMEM;
 	}
+	for (priv->chain_length = 0; priv->chain_length < MXSMMC_DESCRIPTORS; priv->chain_length++) {
+		priv->chain[priv->chain_length] = mxs_dma_desc_alloc();
+		if (!priv->chain[priv->chain_length])
+			break;
+	}
+	if (priv->chain_length < 2)
+		priv->chain_length = 1;
 
 	ret = mxs_dma_init_channel(MXS_DMA_CHANNEL_AHB_APBH_SSP0 + id);
 	if (ret)
@@ -203,7 +216,7 @@ int mxsmmc_initialize(struct bd_info *bis, int id, int (*wp)(int),
 	priv->cfg.f_min = 400000;
 	priv->cfg.f_max = mxc_get_clock(MXC_SSP0_CLK + mxsmmc_clk_id)
 		* 1000 / 2;
-	priv->cfg.b_max = 0x20;
+	priv->cfg.b_max = priv->chain_length > 1 ? MXSMMC_DESCRIPTOR_BLOCKS * priv->chain_length : MXSMMC_DESCRIPTOR_BLOCKS;
 
 	mmc = mmc_create(&priv->cfg, priv);
 	if (!mmc) {
@@ -254,38 +267,48 @@ static int mxsmmc_send_cmd_pio(struct mxsmmc_priv *priv, struct mmc_data *data)
 static int mxsmmc_send_cmd_dma(struct mxsmmc_priv *priv, struct mmc_data *data)
 {
 	uint32_t data_count = data->blocksize * data->blocks;
+	uint32_t chunk_limit = MXSMMC_DESCRIPTOR_BLOCKS * data->blocksize;
+	uint32_t offset, chunk;
+	uint32_t direction;
+	unsigned int index;
 	int dmach;
-	struct mxs_dma_desc *desc = priv->desc;
 	void *addr;
 	unsigned int flags;
 	struct bounce_buffer bbstate;
 
-	memset(desc, 0, sizeof(struct mxs_dma_desc));
-	desc->address = (dma_addr_t)desc;
-
 	if (data->flags & MMC_DATA_READ) {
-		priv->desc->cmd.data = MXS_DMA_DESC_COMMAND_DMA_WRITE;
+		direction = MXS_DMA_DESC_COMMAND_DMA_WRITE;
 		addr = data->dest;
 		flags = GEN_BB_WRITE;
 	} else {
-		priv->desc->cmd.data = MXS_DMA_DESC_COMMAND_DMA_READ;
+		direction = MXS_DMA_DESC_COMMAND_DMA_READ;
 		addr = (void *)data->src;
 		flags = GEN_BB_READ;
 	}
 
 	bounce_buffer_start(&bbstate, addr, data_count, flags);
 
-	priv->desc->cmd.address = (dma_addr_t)bbstate.bounce_buffer;
-
-	priv->desc->cmd.data |= MXS_DMA_DESC_IRQ | MXS_DMA_DESC_DEC_SEM |
-				(data_count << MXS_DMA_DESC_BYTES_OFFSET);
-
 #if !CONFIG_IS_ENABLED(DM_MMC)
 	dmach = MXS_DMA_CHANNEL_AHB_APBH_SSP0 + priv->id;
 #else
 	dmach = priv->dma_channel;
 #endif
-	mxs_dma_desc_append(dmach, priv->desc);
+	for (offset = 0, index = 0; offset < data_count; offset += chunk, index++) {
+		struct mxs_dma_desc *desc = priv->chain_length > 1 ? priv->chain[index] : priv->desc;
+
+		chunk = min(data_count - offset, chunk_limit);
+		if (index >= priv->chain_length || (priv->chain_length == 1 && chunk != data_count)) {
+			bounce_buffer_stop(&bbstate);
+			return -EINVAL;
+		}
+		memset(desc, 0, sizeof(struct mxs_dma_desc));
+		desc->address = (dma_addr_t)desc;
+		desc->cmd.address = (dma_addr_t)bbstate.bounce_buffer + offset;
+		desc->cmd.data = direction | (chunk << MXS_DMA_DESC_BYTES_OFFSET);
+		if (offset + chunk == data_count)
+			desc->cmd.data |= MXS_DMA_DESC_IRQ | MXS_DMA_DESC_DEC_SEM;
+		mxs_dma_desc_append(dmach, desc);
+	}
 	if (mxs_dma_go(dmach)) {
 		bounce_buffer_stop(&bbstate);
 		return -ECOMM;
@@ -607,6 +630,7 @@ static int mxsmmc_probe(struct udevice *dev)
 		printf("%s: Cannot allocate DMA descriptor\n", __func__);
 		return -ENOMEM;
 	}
+	priv->chain_length = 1;
 
 	ret = mxs_dma_init_channel(priv->dma_channel);
 	if (ret)
@@ -626,7 +650,7 @@ static int mxsmmc_probe(struct udevice *dev)
 	 */
 	plat->cfg.f_min = 400000;
 	plat->cfg.f_max = mxc_get_clock(MXC_SSP0_CLK + priv->clkid) * 1000 / 2;
-	plat->cfg.b_max = 0x20;
+	plat->cfg.b_max = 0x7f;
 
 	bdesc = mmc_get_blk_desc(mmc);
 	if (!bdesc) {
