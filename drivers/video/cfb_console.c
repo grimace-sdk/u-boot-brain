@@ -654,7 +654,7 @@ static void console_clear(void)
 			  bgx			/* fill color */
 	);
 #else
-	memsetl(CONSOLE_ROW_FIRST, CONSOLE_SIZE, bgx);
+	memsetl(CONSOLE_ROW_FIRST, CONSOLE_SIZE >> 2, bgx);
 #endif
 }
 
