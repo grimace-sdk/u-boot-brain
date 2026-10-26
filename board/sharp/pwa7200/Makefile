@@ -6,6 +6,7 @@
 
 ifndef	CONFIG_SPL_BUILD
 obj-y	:= pwa7200.o
+obj-$(CONFIG_SHARP_WINCE)	+= teprobe.o
 else
 obj-y	:= iomux.o
 endif
