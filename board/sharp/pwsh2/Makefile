@@ -6,6 +6,7 @@
 
 ifndef	CONFIG_SPL_BUILD
 obj-y	:= pwsh2.o
+obj-$(CONFIG_SHARP_WINCE)	+= display.o menu.o
 else
 obj-y	:= iomux.o
 endif

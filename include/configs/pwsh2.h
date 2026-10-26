@@ -19,4 +19,12 @@
 /* The rest of the configuration is shared */
 #include <configs/mxs.h>
 
+#ifdef CONFIG_SHARP_WINCE
+#undef CONFIG_VIDEO_MXS
+#undef CONFIG_VIDEO_MXS_MODE_SYSTEM
+#undef CONFIG_VIDEO_LOGO
+#undef CONFIG_VIDEO_BMP_LOGO
+#undef CONFIG_VIDEO_FONT_6X11
+#endif
+
 #endif /* __CONFIGS_PWSH2_H__ */

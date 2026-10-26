@@ -24,6 +24,7 @@
 #include <miiphy.h>
 #include <netdev.h>
 #include <errno.h>
+#include "../common/wince/brain.h"
 
 #include "../common/lcd.h"
 #include "../common/cpu_clkdiv.h"
@@ -35,17 +36,19 @@ DECLARE_GLOBAL_DATA_PTR;
  */
 int board_early_init_f(void)
 {
-	/* IO0 clock at 480MHz */
-	mxs_set_ioclk(MXC_IOCLK0, 480000);
-	/* IO1 clock at 480MHz */
-	mxs_set_ioclk(MXC_IOCLK1, 480000);
+	if (!IS_ENABLED(CONFIG_SHARP_WINCE)) {
+		/* IO0 clock at 480MHz */
+		mxs_set_ioclk(MXC_IOCLK0, 480000);
+		/* IO1 clock at 480MHz */
+		mxs_set_ioclk(MXC_IOCLK1, 480000);
 
-	/* SSP0 clock at 96MHz */
-	mxs_set_sspclk(MXC_SSPCLK0, 96000, 0);
-	/* SSP1 clock at 96MHz */
-	mxs_set_sspclk(MXC_SSPCLK1, 96000, 0);
-	/* set cpu clock div 1(480MHz)*/
-	mxs_set_divcpu(1);
+		/* SSP0 clock at 96MHz */
+		mxs_set_sspclk(MXC_SSPCLK0, 96000, 0);
+		/* SSP1 clock at 96MHz */
+		mxs_set_sspclk(MXC_SSPCLK1, 96000, 0);
+		/* set cpu clock div 1(480MHz)*/
+		mxs_set_divcpu(1);
+	}
 
 #ifdef CONFIG_CMD_USB
 	mxs_iomux_setup_pad(MX28_PAD_SSP2_SS1__USB1_OVERCURRENT);
@@ -84,7 +87,13 @@ static int brain_mmc_cd(int id)
 
 int board_mmc_init(struct bd_info *bis)
 {
+	if (IS_ENABLED(CONFIG_SHARP_WINCE)) {
+		mxs_set_ioclk(MXC_IOCLK0, 480000);
+		mxs_set_sspclk(MXC_SSPCLK0, 96000, 0);
+	}
 	mxsmmc_initialize(bis, 0, brain_mmc_wp, brain_mmc_cd);
+	if (IS_ENABLED(CONFIG_SHARP_WINCE))
+		mxs_set_sspclk(MXC_SSPCLK1, 96000, 0);
 	mxsmmc_initialize(bis, 1, brain_mmc_wp, brain_mmc_cd);
 
 	/* Turn on the SD*/
@@ -107,5 +116,14 @@ static const lcd_config_t lcd_config = {
 lcd_config_t get_lcd_config()
 {
 	return lcd_config;
+}
+#endif
+
+#ifdef CONFIG_SHARP_WINCE
+void brain_board_late_init(void)
+{
+	brain_display_init();
+	if (IS_ENABLED(CONFIG_SHARP_KEYBOARD))
+		brain_keyboard_init();
 }
 #endif
