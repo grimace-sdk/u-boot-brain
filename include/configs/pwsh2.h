@@ -25,6 +25,7 @@
 #undef CONFIG_VIDEO_LOGO
 #undef CONFIG_VIDEO_BMP_LOGO
 #undef CONFIG_VIDEO_FONT_6X11
+#define VIDEO_FB_16BPP_WORD_SWAP
 #endif
 
 #endif /* __CONFIGS_PWSH2_H__ */
