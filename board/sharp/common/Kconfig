@@ -19,3 +19,5 @@ config LCD_Y
 	default 320 if TARGET_PWA7200 || TARGET_PWA7400
 	default 480 if TARGET_PWSH1 || TARGET_PWSH2 || TARGET_PWSH3 || \
 	TARGET_PWSH4 || TARGET_PWSH5 || TARGET_PWSH6 || TARGET_PWSH7
+
+source "board/sharp/common/wince/Kconfig"

@@ -1,0 +1,45 @@
+config SHARP_WINCE
+	bool "Boot Sharp's Windows CE from the internal MMC"
+	depends on ARCH_MX28
+	select BOARD_LATE_INIT
+	select CONSOLE_RECORD
+	select FAT_WRITE
+	help
+	  Adds bootsharpce, which reads Sharp's Windows CE image from the
+	  internal MMC (read only), patches it in RAM from pwsh2-boot/boot.nkp
+	  on the card and starts it.
+
+if SHARP_WINCE
+
+config SHARP_WINCE_BSP_ARGS
+	hex "Address of EBOOT's internal boot flag"
+	help
+	  Word in the BSP arguments that tells CE it was booted from the
+	  internal MMC.
+
+config SHARP_WINCE_SLOT_B
+	bool "Fall back to the second image slot"
+	default y
+
+config SHARP_WINCE_DEBUG_LOG
+	bool "Save CE's RAM debug log to the card"
+
+config SHARP_WINCE_BOOTCMD
+	string "Boot command"
+	default "bootsharpce; savelog; run linux_boot"
+	help
+	  Replaces bootcmd. The previous bootcmd is kept as linux_boot.
+
+config SHARP_KEYBOARD
+	bool "Brain I2C keyboard"
+	depends on SYS_I2C_MXS
+	help
+	  Adds brainkey, which waits for Enter, and brain_keyboard_init(),
+	  which adds the keyboard as a console input.
+
+config SHARP_KEYBOARD_I2C_BUS
+	int "Keyboard I2C bus"
+	depends on SHARP_KEYBOARD
+	default 1
+
+endif

@@ -1,0 +1,49 @@
+Sharp Windows CE loader for Brain boards
+=======================================
+
+Boots Sharp's Windows CE from the internal MMC, read only, after patching it in
+RAM from pwsh2-boot/boot.nkp on the card. Used by pwsh2-boot.
+
+Files
+-----
+
+sharpce.c	bootsharpce, board_late_init, boot command
+nkpatch.c	boot.nkp bundle: skip spans, patches, module loads
+hwstate.c	EBOOT register snapshot at entry, restored before the CE jump
+bootlog.c	savelog: console record to pwsh2-boot/uboot.log
+keyboard.c	I2C keyboard: console input and brainkey
+brain.h		interface shared with board code
+
+Boards
+------
+
+Enabled by CONFIG_SHARP_WINCE in a <board>_ce_defconfig. The upstream
+defconfigs are left as they are and build upstream U-Boot.
+
+Per-device values are Kconfig options set in the defconfig:
+
+SHARP_WINCE_BSP_ARGS	EBOOT's internal boot flag (SH2 0x400F3060, A7300 0x400F6C60)
+SHARP_WINCE_SLOT_B	fall back to the second image slot
+SHARP_WINCE_DEBUG_LOG	save CE's RAM debug log to the card
+SHARP_WINCE_BOOTCMD	replaces bootcmd; the old one is kept as linux_boot
+SHARP_KEYBOARD		I2C keyboard at 0x28
+SHARP_KEYBOARD_I2C_BUS	SH2 1, A7300 0
+
+Board code may provide (weak defaults do nothing):
+
+brain_board_late_init()	start a display, keyboard console, pin setup
+brain_menu_progress()	progress while loading
+brain_display_report()	log display state before the CE jump
+brain_display_refresh()	called while waiting for console input
+
+With CONFIG_SHARP_WINCE set, board code must leave EBOOT's clocks and pin mux
+as it can: CE expects them. pwsh2 and pwa7200 skip their early clock setup and
+set the SSP clocks just before MMC init instead.
+
+Adding a device
+---------------
+
+1. Find the BSP arguments flag in the device's EBOOT (see pwsh2-boot docs).
+2. Copy the closest <board>_ce_defconfig, set TARGET_* and the values above.
+3. Gate any board code that changes clocks or pins with CONFIG_SHARP_WINCE.
+4. Put device-only code (display, diagnostics) in the board directory.

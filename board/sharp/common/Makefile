@@ -7,3 +7,6 @@ endif
 ifdef CONFIG_ARCH_MX28
 obj-$(CONFIG_ARCH_MX28)	+= cpu_clkdiv.o
 endif
+ifndef CONFIG_SPL_BUILD
+obj-$(CONFIG_SHARP_WINCE)	+= wince/
+endif

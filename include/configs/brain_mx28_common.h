@@ -34,6 +34,12 @@
 #define CONFIG_USB_MAX_CONTROLLER_COUNT	1
 #endif
 
+/* I2C */
+#ifdef CONFIG_SYS_I2C_MXS
+#define CONFIG_SYS_I2C
+#define CONFIG_SYS_I2C_SPEED	100000
+#endif
+
 /* Framebuffer support */
 #ifdef CONFIG_VIDEO
 #define CONFIG_VIDEO_MXS

@@ -95,11 +95,16 @@ int arch_misc_init(void)
 }
 #endif
 
+__weak void brain_snapshot_eboot_hardware(void)
+{
+}
+
 int arch_cpu_init(void)
 {
 	struct mxs_clkctrl_regs *clkctrl_regs =
 		(struct mxs_clkctrl_regs *)MXS_CLKCTRL_BASE;
 
+	brain_snapshot_eboot_hardware();
 	mx28_fixup_vt((uint32_t)&_start);
 
 	/*
