@@ -7,7 +7,8 @@
 #include <u-boot/crc.h>
 #include "brain.h"
 
-#define PATCH_FILE		CARD_DIRECTORY "/boot.nkp"
+#define PATCH_FILE_NAME		"boot.nkp"
+#define IMAGE_DIRECTORY		CARD_DIRECTORY "/nk-%08x"
 #define PATCH_BUFFER		0x45000000
 #define PATCH_BUFFER_LIMIT	0x00800000
 #define MAXIMUM_NAME_LENGTH	64
@@ -18,6 +19,7 @@
 enum patch_pass { PASS_VERIFY, PASS_APPLY };
 
 static u32 zeroed_end;
+static char bundle_directory[MAXIMUM_PATH_LENGTH];
 
 struct loaded_region {
 	u8 *start;
@@ -84,9 +86,9 @@ static int load_card_file(struct token *path_token, u8 *destination, u32 length,
 	char path[MAXIMUM_PATH_LENGTH];
 	loff_t size = 0, read = 0;
 
-	if (path_token->length + sizeof(CARD_DIRECTORY "/") > sizeof(path))
+	if (strlen(bundle_directory) + path_token->length + 2 > sizeof(path))
 		return fail(result, "load path too long", line_number);
-	snprintf(path, sizeof(path), CARD_DIRECTORY "/%.*s", (int)path_token->length, path_token->start);
+	snprintf(path, sizeof(path), "%s/%.*s", bundle_directory, (int)path_token->length, path_token->start);
 	if (result->load_count >= MAXIMUM_LOADS)
 		return fail(result, "too many loads", line_number);
 	if (!region_is_zero(destination, length))
@@ -208,17 +210,33 @@ static const char *line_end_of(const char *line)
 	return end ? end : bundle_text + bundle_length;
 }
 
-int brain_nk_bundle_load(void)
+static int read_bundle(const char *directory, loff_t *size)
+{
+	char path[MAXIMUM_PATH_LENGTH];
+	int result = fs_set_blk_dev("mmc", CARD_DEVICE, FS_TYPE_FAT);
+
+	strlcpy(bundle_directory, directory, sizeof(bundle_directory));
+	snprintf(path, sizeof(path), "%s/" PATCH_FILE_NAME, directory);
+	if (!result)
+		result = fs_read(path, PATCH_BUFFER, 0, 0, size);
+	return result;
+}
+
+int brain_nk_bundle_load(u32 image_length)
 {
 	unsigned long started = get_timer(0);
+	char directory[MAXIMUM_PATH_LENGTH];
 	loff_t size = 0;
-	int result = fs_set_blk_dev("mmc", CARD_DEVICE, FS_TYPE_FAT);
+	int result;
 
 	bundle_text = NULL;
 	bundle_length = 0;
-	if (!result)
-		result = fs_read(PATCH_FILE, PATCH_BUFFER, 0, 0, &size);
-	printf("nk bundle: read result %d, %lld bytes, %lu ms\n", result, size, get_timer(started));
+	snprintf(directory, sizeof(directory), IMAGE_DIRECTORY, image_length);
+	result = read_bundle(directory, &size);
+	if (result)
+		result = read_bundle(CARD_DIRECTORY, &size);
+	printf("nk bundle: %s/" PATCH_FILE_NAME ", read result %d, %lld bytes, %lu ms\n", bundle_directory, result, size,
+	       get_timer(started));
 	if (result || size > PATCH_BUFFER_LIMIT)
 		return -ENOENT;
 	bundle_text = map_sysmem(PATCH_BUFFER, PATCH_BUFFER_LIMIT);

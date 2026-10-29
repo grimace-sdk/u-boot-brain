@@ -301,7 +301,7 @@ static int do_bootsharpce(struct cmd_tbl *command, int flag, int argc, char *con
 
 	started = get_timer(0);
 	if (strcmp(action, "stock"))
-		brain_nk_bundle_load();
+		brain_nk_bundle_load(image.length);
 	span_count = brain_nk_bundle_skip_spans(image.length, spans, MAXIMUM_SKIP_SPANS);
 	span_index = 0;
 	skipped = 0;

@@ -27,7 +27,7 @@ void brain_board_late_init(void);
 
 void brain_menu_progress(unsigned int done, unsigned int total);
 
-int brain_nk_bundle_load(void);
+int brain_nk_bundle_load(u32 image_length);
 unsigned int brain_nk_bundle_skip_spans(u32 image_length, struct nk_skip_span *spans, unsigned int maximum);
 void brain_nk_bundle_apply(u8 *image, u32 image_length, unsigned int progress_start);
 
