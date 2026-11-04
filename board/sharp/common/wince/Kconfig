@@ -42,4 +42,19 @@ config SHARP_KEYBOARD_I2C_BUS
 	depends on SHARP_KEYBOARD
 	default 1
 
+config SHARP_KEYBOARD_MATRIX
+	bool "Brain GPIO matrix keyboard"
+	depends on !SHARP_KEYBOARD
+	help
+	  Adds brainkey for models whose keyboard is a GPIO matrix. It drives
+	  the Enter column low and waits for the Enter row to read low.
+
+config SHARP_KEYBOARD_MATRIX_ENTER_COLUMN
+	int "GPIO driven to scan Enter (bank * 32 + pin)"
+	depends on SHARP_KEYBOARD_MATRIX
+
+config SHARP_KEYBOARD_MATRIX_ENTER_ROW
+	int "GPIO read for Enter (bank * 32 + pin)"
+	depends on SHARP_KEYBOARD_MATRIX
+
 endif

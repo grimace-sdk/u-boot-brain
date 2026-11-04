@@ -2,3 +2,4 @@
 
 obj-y	:= bootlog.o hwstate.o nkpatch.o sharpce.o
 obj-$(CONFIG_SHARP_KEYBOARD)	+= keyboard.o
+obj-$(CONFIG_SHARP_KEYBOARD_MATRIX)	+= keymatrix.o

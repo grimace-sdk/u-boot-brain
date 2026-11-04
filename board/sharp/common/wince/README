@@ -12,6 +12,7 @@ nkpatch.c	boot.nkp bundle: skip spans, patches, module loads
 hwstate.c	EBOOT register snapshot at entry, restored before the CE jump
 bootlog.c	savelog: console record to pwsh2-boot/uboot.log
 keyboard.c	I2C keyboard: console input and brainkey
+keymatrix.c	GPIO matrix keyboard: brainkey only
 brain.h		interface shared with board code
 
 Boards
@@ -22,12 +23,14 @@ defconfigs are left as they are and build upstream U-Boot.
 
 Per-device values are Kconfig options set in the defconfig:
 
-SHARP_WINCE_BSP_ARGS	EBOOT's internal boot flag (SH2 0x400F3060, A7300 0x400F6C60)
+SHARP_WINCE_BSP_ARGS	EBOOT's internal boot flag (SH2, SH4 0x400F3060, A7300 0x400F6C60)
 SHARP_WINCE_SLOT_B	fall back to the second image slot
 SHARP_WINCE_DEBUG_LOG	save CE's RAM debug log to the card
 SHARP_WINCE_BOOTCMD	replaces bootcmd; the old one is kept as linux_boot
 SHARP_KEYBOARD		I2C keyboard at 0x28
 SHARP_KEYBOARD_I2C_BUS	SH2 1, A7300 0
+SHARP_KEYBOARD_MATRIX	GPIO matrix keyboard (SH4), instead of SHARP_KEYBOARD
+SHARP_KEYBOARD_MATRIX_ENTER_COLUMN, _ROW	Enter's GPIOs (SH4 136, 134)
 
 Board code may provide (weak defaults do nothing):
 
@@ -37,7 +40,7 @@ brain_display_report()	log display state before the CE jump
 brain_display_refresh()	called while waiting for console input
 
 With CONFIG_SHARP_WINCE set, board code must leave EBOOT's clocks and pin mux
-as it can: CE expects them. pwsh2 and pwa7200 skip their early clock setup and
+as it can: CE expects them. pwsh2, pwsh4 and pwa7200 skip their early clock setup and
 set the SSP clocks just before MMC init instead.
 
 Adding a device
