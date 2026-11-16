@@ -239,15 +239,22 @@ static void card_make_directories(const char *path)
 
 static int card_write(const char *path, const void *data, u32 length)
 {
+	void *aligned = NULL;
 	loff_t written = 0;
 	int result;
 
+	if ((ulong)data & (ARCH_DMA_MINALIGN - 1)) {
+		aligned = malloc_cache_aligned(length ? length : 1);
+		if (aligned)
+			data = memcpy(aligned, data, length);
+	}
 	card_make_directories(path);
 	result = card_select();
 	if (!result)
 		result = fs_write(path, map_to_sysmem(data), 0, length, &written);
 	if (!result && written != length)
 		result = -EIO;
+	free(aligned);
 	return result;
 }
 
