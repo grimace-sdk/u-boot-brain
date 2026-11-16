@@ -884,7 +884,7 @@ int brain_nkgen_save(void)
 	}
 	free(wrote);
 	snprintf(line, sizeof(line), "generated in %lu ms, saved in %lu ms: %u of %u files written, %llu bytes",
-		 generated_ms, get_timer(started), files_written, call.output_count, bytes_written);
+		 generated_ms, get_timer(started), files_written, call.output_count, (unsigned long long)bytes_written);
 	log_line(line);
 	folder_path(path, sizeof(path), GENERATOR_LOG_NAME);
 	if (generator_log)
