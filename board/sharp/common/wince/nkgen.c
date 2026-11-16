@@ -393,6 +393,8 @@ static void read_stamp_line(struct cache_stamp *stamp, const char *line, size_t 
 		char *end;
 
 		stamp->bundle_length = simple_strtoul(value + strlen(bundle_path) + 1, &end, 16);
+		while (*end == ' ')
+			end++;
 		stamp->bundle_crc = simple_strtoul(end, NULL, 16);
 		stamp->has_bundle_line = true;
 	}
@@ -433,9 +435,14 @@ static bool bundle_matches_stamp(const struct cache_stamp *stamp)
 {
 	size_t length;
 	const char *text = brain_nk_bundle_text(&length);
+	u32 crc = text ? crc32(0, (const u8 *)text, length) : 0;
 
-	return stamp->has_bundle_line && text && stamp->bundle_length == length &&
-	       crc32(0, (const u8 *)text, length) == stamp->bundle_crc;
+	if (stamp->has_bundle_line && text && stamp->bundle_length == length && crc == stamp->bundle_crc)
+		return true;
+	printf("nkgen: %s/" BUNDLE_NAME " is %zx bytes, crc32 %08x; " CACHE_STAMP_NAME " %s %x bytes, crc32 %08x\n",
+	       status.folder, text ? length : 0, crc, stamp->has_bundle_line ? "says" : "has no line, so",
+	       stamp->bundle_length, stamp->bundle_crc);
+	return false;
 }
 
 static bool cache_outdated(const struct cache_stamp *stamp)
@@ -548,8 +555,6 @@ enum brain_bundle_choice brain_bundle_choose(u32 image_length, bool regenerate)
 	if (found) {
 		stamped = !read_cache_stamp(&stamp);
 		matches = stamped && bundle_matches_stamp(&stamp);
-		if (stamped && !matches)
-			printf("nkgen: %s/" BUNDLE_NAME " differs from " CACHE_STAMP_NAME "\n", status.folder);
 		generate = regenerate || (stamped && (!matches || cache_outdated(&stamp)));
 	}
 	if (generate && generation_allowed() && !prepare_generator())
