@@ -7,8 +7,9 @@ RAM from pwsh2-boot/boot.nkp on the card. Used by pwsh2-boot.
 Files
 -----
 
-sharpce.c	bootsharpce, board_late_init, boot command
+sharpce.c	bootsharpce, board_late_init, boot command, identity read
 nkpatch.c	boot.nkp bundle: skip spans, patches, module loads
+nkgen.c		bundle lookup, nkgen.bin generator, cache.txt, boot-status.txt
 progress.c	progress bar: brain_progress_begin, _step, _update, _end
 hwstate.c	EBOOT register snapshot at entry, restored before the CE jump
 bootlog.c	savelog: console record to pwsh2-boot/uboot.log
@@ -27,6 +28,9 @@ Per-device values are Kconfig options set in the defconfig:
 SHARP_WINCE_BSP_ARGS	EBOOT's internal boot flag (SH2, SH4 0x400F3060, A7300 0x400F6C60)
 SHARP_WINCE_SLOT_B	fall back to the second image slot
 SHARP_WINCE_DEBUG_LOG	save CE's RAM debug log to the card
+SHARP_WINCE_MODEL	uboot= in pwsh2-boot/boot-status.txt (pwsh2, pwa7300, pwsh4)
+SHARP_WINCE_NKGEN_*	generator, pak and arena addresses (0x42000000, 0x42100000,
+			0x42800000, 24 MB), the same in every build
 SHARP_WINCE_BOOTCMD	replaces bootcmd; the old one is kept as linux_boot
 SHARP_KEYBOARD		I2C keyboard at 0x28
 SHARP_KEYBOARD_I2C_BUS	SH2 1, A7300 0
@@ -46,6 +50,27 @@ bar, brain_progress_step(units) gives the next part of the total to a step and
 brain_progress_update(done, total) reports within it. The bar is redrawn only
 when its filled width changes. bootsharpce weights the eMMC read, the
 skip-span clears and each boot.nkp section by estimated time.
+brain_progress_stage(text) shows a line of text in place of the menu labels.
+
+Bundle lookup
+-------------
+
+bootsharpce reads the image identity, a CRC-32 of the ROM header and its module
+and file tables, then uses the first of:
+
+1. pwsh2-boot/nk-IDENTITY/boot.nkp. With cache.txt it was generated on a Brain
+   and is remade when nkgen.bin or nkgen.pak differ from those it records, or
+   boot.nkp differs from its recorded size and CRC-32. Without cache.txt it is
+   used as it stands.
+2. The generator. nkgen.bin and nkgen.pak are loaded at their addresses and
+   checked, the whole image is read and nkgen.bin makes boot.nkp and its files
+   in RAM. They are applied from RAM and written to nk-IDENTITY, cache.txt last.
+   pwsh2-boot/no-nkgen turns this off; 'bootsharpce generate' forces it.
+3. pwsh2-boot/nk-LENGTH/boot.nkp, then pwsh2-boot/boot.nkp.
+
+Each boot writes pwsh2-boot/boot-status.txt when its text changes; bstart reads
+it. nkgen.bin is built with r9 reserved, so U-Boot's global data pointer is
+intact in its progress and log callbacks.
 
 With CONFIG_SHARP_WINCE set, board code must leave EBOOT's clocks and pin mux
 as it can: CE expects them. pwsh2, pwsh4 and pwa7200 skip their early clock setup and

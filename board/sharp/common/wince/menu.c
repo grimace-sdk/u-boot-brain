@@ -233,6 +233,18 @@ int brain_progress_bar_open(struct brain_progress_bar *bar)
 	return 0;
 }
 
+int brain_progress_label_push(const char *text)
+{
+	int height = VIDEO_FONT_HEIGHT * layout.label_scale;
+
+	if (!menu_shown)
+		return -ENODEV;
+	memcpy(&canvas[layout.label_top * screen.width], &background[layout.label_top * screen.width],
+	       height * screen.width * sizeof(*canvas));
+	draw_centred_text(text, screen.width / 2, layout.label_top + (height - VIDEO_FONT_HEIGHT) / 2, 1, COLOUR_BLACK);
+	return brain_screen_push(canvas, 0, layout.label_top, screen.width, height);
+}
+
 int brain_progress_bar_push(const u16 *pixels, const struct brain_progress_bar *bar)
 {
 	unsigned int row;

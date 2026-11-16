@@ -15,6 +15,7 @@
 #define MAXIMUM_EXTENSION	0x10000
 #define MAXIMUM_PATH_LENGTH	96
 #define MAXIMUM_LOADS		4
+#define MAXIMUM_SECTIONS	64
 #define TEXT_NS_PER_BYTE	700
 #define LOAD_US			133000
 #define LOAD_NS_PER_BYTE	150
@@ -23,6 +24,10 @@ enum patch_pass { PASS_VERIFY, PASS_APPLY };
 
 static u32 zeroed_end;
 static char bundle_directory[MAXIMUM_PATH_LENGTH];
+static const struct brain_ram_file *ram_files;
+static unsigned int ram_file_count;
+static struct brain_nk_section sections[MAXIMUM_SECTIONS];
+static unsigned int section_count;
 
 struct loaded_region {
 	u8 *start;
@@ -83,10 +88,21 @@ static bool region_is_zero(const u8 *start, size_t length)
 	return true;
 }
 
+static const struct brain_ram_file *find_ram_file(const char *path)
+{
+	unsigned int index;
+
+	for (index = 0; index < ram_file_count; index++)
+		if (!strcmp(ram_files[index].path, path))
+			return &ram_files[index];
+	return NULL;
+}
+
 static int load_card_file(struct token *path_token, u8 *destination, u32 length, u32 expected_crc,
 			  struct patch_result *result, unsigned int line_number)
 {
 	char path[MAXIMUM_PATH_LENGTH];
+	const struct brain_ram_file *ram_file;
 	loff_t size = 0, read = 0;
 
 	if (strlen(bundle_directory) + path_token->length + 2 > sizeof(path))
@@ -96,10 +112,15 @@ static int load_card_file(struct token *path_token, u8 *destination, u32 length,
 		return fail(result, "too many loads", line_number);
 	if (!region_is_zero(destination, length))
 		return fail(result, "load target is not cleared", line_number);
-	if (fs_set_blk_dev("mmc", CARD_DEVICE, FS_TYPE_FAT) || fs_size(path, &size) || size != length)
+	ram_file = find_ram_file(path);
+	if (ram_file) {
+		if (ram_file->length != length)
+			return fail(result, "load file missing or wrong size", line_number);
+		memcpy(destination, ram_file->data, length);
+	} else if (fs_set_blk_dev("mmc", CARD_DEVICE, FS_TYPE_FAT) || fs_size(path, &size) || size != length) {
 		return fail(result, "load file missing or wrong size", line_number);
-	if (fs_set_blk_dev("mmc", CARD_DEVICE, FS_TYPE_FAT) ||
-	    fs_read(path, map_to_sysmem(destination), 0, length, &read) || read != length) {
+	} else if (fs_set_blk_dev("mmc", CARD_DEVICE, FS_TYPE_FAT) ||
+		   fs_read(path, map_to_sysmem(destination), 0, length, &read) || read != length) {
 		memset(destination, 0, length);
 		return fail(result, "load file unreadable", line_number);
 	}
@@ -225,6 +246,29 @@ static int read_bundle(const char *directory, loff_t *size)
 	return result;
 }
 
+void brain_nk_bundle_clear(void)
+{
+	bundle_text = NULL;
+	bundle_length = 0;
+	bundle_directory[0] = 0;
+	ram_files = NULL;
+	ram_file_count = 0;
+	section_count = 0;
+}
+
+static int use_card_bundle(int result, loff_t size, unsigned long started)
+{
+	printf("nk bundle: %s/" PATCH_FILE_NAME ", read result %d, %lld bytes, %lu ms\n", bundle_directory, result, size,
+	       get_timer(started));
+	if (result || size > PATCH_BUFFER_LIMIT) {
+		bundle_directory[0] = 0;
+		return -ENOENT;
+	}
+	bundle_text = map_sysmem(PATCH_BUFFER, PATCH_BUFFER_LIMIT);
+	bundle_length = size;
+	return 0;
+}
+
 int brain_nk_bundle_load(u32 image_length)
 {
 	unsigned long started = get_timer(0);
@@ -232,19 +276,62 @@ int brain_nk_bundle_load(u32 image_length)
 	loff_t size = 0;
 	int result;
 
-	bundle_text = NULL;
-	bundle_length = 0;
+	brain_nk_bundle_clear();
 	snprintf(directory, sizeof(directory), IMAGE_DIRECTORY, image_length);
 	result = read_bundle(directory, &size);
 	if (result)
 		result = read_bundle(CARD_DIRECTORY, &size);
-	printf("nk bundle: %s/" PATCH_FILE_NAME ", read result %d, %lld bytes, %lu ms\n", bundle_directory, result, size,
-	       get_timer(started));
-	if (result || size > PATCH_BUFFER_LIMIT)
-		return -ENOENT;
-	bundle_text = map_sysmem(PATCH_BUFFER, PATCH_BUFFER_LIMIT);
-	bundle_length = size;
-	return 0;
+	return use_card_bundle(result, size, started);
+}
+
+int brain_nk_bundle_load_from(const char *directory)
+{
+	unsigned long started = get_timer(0);
+	loff_t size = 0;
+
+	brain_nk_bundle_clear();
+	return use_card_bundle(read_bundle(directory, &size), size, started);
+}
+
+void brain_nk_bundle_use_ram(const char *text, size_t length, const char *directory, const struct brain_ram_file *files,
+			     unsigned int file_count)
+{
+	brain_nk_bundle_clear();
+	bundle_text = text;
+	bundle_length = length;
+	strlcpy(bundle_directory, directory, sizeof(bundle_directory));
+	ram_files = files;
+	ram_file_count = file_count;
+}
+
+const char *brain_nk_bundle_text(size_t *length)
+{
+	*length = bundle_length;
+	return bundle_text;
+}
+
+const char *brain_nk_bundle_directory(void)
+{
+	return bundle_text ? bundle_directory : "";
+}
+
+unsigned int brain_nk_bundle_sections(const struct brain_nk_section **list)
+{
+	*list = sections;
+	return section_count;
+}
+
+static void record_section(const char *name, size_t name_length, const struct patch_result *result, bool applied)
+{
+	struct brain_nk_section *section;
+
+	if (section_count >= MAXIMUM_SECTIONS)
+		return;
+	section = &sections[section_count++];
+	section->name = name;
+	section->name_length = name_length;
+	section->problem = applied ? NULL : result->problem;
+	section->line = result->problem_line;
 }
 
 unsigned int brain_nk_bundle_skip_spans(u32 image_length, struct nk_skip_span *spans, unsigned int maximum)
@@ -347,6 +434,7 @@ void brain_nk_bundle_apply(u8 *image, u32 image_length)
 	unsigned long started = get_timer(0);
 
 	zeroed_end = image_length;
+	section_count = 0;
 	if (!bundle_text)
 		return;
 	cost_total = brain_nk_bundle_cost();
@@ -365,10 +453,12 @@ void brain_nk_bundle_apply(u8 *image, u32 image_length)
 
 				if (run_patch_pass(section_start, length, image, image_length, PASS_VERIFY, &result)) {
 					clear_loads(&result);
+					record_section(section_name, section_name_length, &result, false);
 					printf("nk patch %.*s: skipped, %s at line %u\n", (int)section_name_length, section_name,
 					       result.problem, result.problem_line);
 				} else {
 					run_patch_pass(section_start, length, image, image_length, PASS_APPLY, &result);
+					record_section(section_name, section_name_length, &result, true);
 					applied++;
 					printf("nk patch %.*s: applied %u records, %u bytes\n", (int)section_name_length, section_name,
 					       result.records, result.bytes);

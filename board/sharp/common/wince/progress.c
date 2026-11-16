@@ -87,6 +87,13 @@ void brain_progress_update(u32 done, u32 total)
 		draw_bar(filled);
 }
 
+void brain_progress_stage(const char *stage)
+{
+	if (bar_shown && brain_progress_label_push(stage))
+		printf("progress: stage text not shown\n");
+	printf("progress: %s\n", stage);
+}
+
 void brain_progress_end(void)
 {
 	if (!bar_shown)

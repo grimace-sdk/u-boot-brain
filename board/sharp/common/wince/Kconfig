@@ -37,6 +37,32 @@ config SHARP_WINCE_PROFILE
 	  brainmenu reads pwsh2-boot/PROFILE/menu.txt before
 	  pwsh2-boot/menu.txt.
 
+config SHARP_WINCE_MODEL
+	string "Model name in the boot status"
+	default ""
+	help
+	  Written as uboot= in pwsh2-boot/boot-status.txt, so the status
+	  says which U-Boot build booted (pwsh2, pwa7300, pwsh4).
+
+config SHARP_WINCE_NKGEN_ADDRESS
+	hex "Load address of pwsh2-boot/nkgen.bin"
+	default 0x42000000
+	help
+	  The generator's code, data and BSS, up to the pak address. It is
+	  linked for this address.
+
+config SHARP_WINCE_NKGEN_PAK_ADDRESS
+	hex "Load address of pwsh2-boot/nkgen.pak"
+	default 0x42100000
+
+config SHARP_WINCE_NKGEN_ARENA_ADDRESS
+	hex "Generator work memory and outputs"
+	default 0x42800000
+
+config SHARP_WINCE_NKGEN_ARENA_SIZE
+	hex "Size of the generator work memory"
+	default 0x1800000
+
 config SHARP_PANEL_PORTRAIT
 	bool "Menu on a portrait LCDIF panel as EBOOT left it"
 	help

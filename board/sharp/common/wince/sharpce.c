@@ -35,6 +35,10 @@
 #define READ_BYTES_PER_US		17
 #define CLEAR_BYTES_PER_US		400
 #define MAXIMUM_SKIP_SPANS		64
+#define GENERATE_READ_UNITS		35
+#define GENERATE_RUN_UNITS		40
+#define GENERATE_SAVE_UNITS		15
+#define GENERATE_PATCH_UNITS		10
 #ifdef CONFIG_SHARP_WINCE_DEBUG_LOG
 #define CE_DEBUG_LOG_ADDRESS		0x40180000
 #define CE_DEBUG_LOG_MAGIC		0x474c4543
@@ -165,11 +169,34 @@ static unsigned long count_nonzero_words(const u32 *words, unsigned long count)
 	return nonzero;
 }
 
-static int read_image(struct blk_desc *device, const struct sharp_ce_image *image, lbaint_t sectors)
+struct slot_reader {
+	struct blk_desc *device;
+	lbaint_t start_sector;
+};
+
+static int read_slot_sectors(void *context, u32 first_sector, u32 sector_count, void *buffer)
+{
+	struct slot_reader *reader = context;
+
+	if (blk_dread(reader->device, reader->start_sector + first_sector, sector_count, buffer) != sector_count)
+		return -EIO;
+	return 0;
+}
+
+static int read_identity(struct blk_desc *device, const struct sharp_ce_image *image, u32 *identity)
+{
+	struct slot_reader reader = { device, image->start_sector };
+	unsigned long started = get_timer(0);
+	int result = brain_image_identity(read_slot_sectors, &reader, image->length, identity);
+
+	printf("Windows CE: identity %08x, result %d, %lu ms\n", result ? 0 : *identity, result, get_timer(started));
+	return result;
+}
+
+static int read_sectors(struct blk_desc *device, const struct sharp_ce_image *image, lbaint_t sectors)
 {
 	lbaint_t done, chunk;
 
-	brain_progress_begin(sectors);
 	for (done = 0; done < sectors; done += chunk) {
 		chunk = min((lbaint_t)PROGRESS_CHUNK_SECTORS, sectors - done);
 		brain_progress_update(done, sectors);
@@ -177,6 +204,15 @@ static int read_image(struct blk_desc *device, const struct sharp_ce_image *imag
 			      (void *)(SHARP_CE_LOAD_ADDRESS + done * SECTOR_SIZE)) != chunk)
 			return -EIO;
 	}
+	brain_progress_update(sectors, sectors);
+	return 0;
+}
+
+static int read_image(struct blk_desc *device, const struct sharp_ce_image *image, lbaint_t sectors)
+{
+	brain_progress_begin(sectors);
+	if (read_sectors(device, image, sectors))
+		return -EIO;
 	brain_progress_end();
 	return 0;
 }
@@ -281,48 +317,18 @@ static lbaint_t skipped_sectors(const struct nk_skip_span *spans, unsigned int s
 	return sectors;
 }
 
-static int do_bootsharpce(struct cmd_tbl *command, int flag, int argc, char *const argv[])
+static int load_with_skips(struct blk_desc *device, const struct sharp_ce_image *image, struct mmc *mmc, bool logging)
 {
-	struct sharp_ce_image image;
-	struct blk_desc *device;
-	struct mmc *mmc;
+	lbaint_t sectors = DIV_ROUND_UP(image->length, SECTOR_SIZE);
 	lbaint_t done, chunk, skipped, planned_skip;
 	struct nk_skip_span spans[MAXIMUM_SKIP_SPANS];
 	unsigned int span_count, span_index;
 	u32 read_cost, patch_cost;
 	unsigned long started, clearing_started, clearing_time, retained_words;
-	bool logging;
 	void *span_address;
-	lbaint_t sectors;
-	const char *action = argc > 1 ? argv[1] : "";
-	void (*kernel_entry)(void) = (void (*)(void))SHARP_CE_LOAD_ADDRESS;
-
-	mmc = find_mmc_device(SHARP_CE_MMC_DEVICE);
-	if (!mmc || mmc_init(mmc)) {
-		printf("bootsharpce: internal MMC unavailable\n");
-		return CMD_RET_FAILURE;
-	}
-	device = mmc_get_blk_desc(mmc);
-	if (find_sharp_ce_image(device, &image)) {
-		printf("bootsharpce: no valid Windows CE image on the internal MMC\n");
-		return CMD_RET_FAILURE;
-	}
-	sectors = DIV_ROUND_UP(image.length, SECTOR_SIZE);
-	printf("Windows CE: slot %c, sector 0x" LBAF ", %u bytes\n", image.slot, image.start_sector, image.length);
-	if (!strcmp(action, "info"))
-		return CMD_RET_SUCCESS;
-	if (!strcmp(action, "dump"))
-		return dump_image(device, &image) ? CMD_RET_FAILURE : CMD_RET_SUCCESS;
-	if (strcmp(action, "prepare")) {
-		dump_on_request(device, &image);
-		save_ce_debug_log();
-	}
-	logging = strcmp(action, "prepare") && brain_boot_log_requested();
 
 	started = get_timer(0);
-	if (strcmp(action, "stock"))
-		brain_nk_bundle_load(image.length);
-	span_count = brain_nk_bundle_skip_spans(image.length, spans, MAXIMUM_SKIP_SPANS);
+	span_count = brain_nk_bundle_skip_spans(image->length, spans, MAXIMUM_SKIP_SPANS);
 	planned_skip = skipped_sectors(spans, span_count);
 	read_cost = load_cost(sectors - planned_skip, planned_skip);
 	patch_cost = brain_nk_bundle_cost();
@@ -351,24 +357,116 @@ static int do_bootsharpce(struct cmd_tbl *command, int flag, int argc, char *con
 		if (span_index < span_count)
 			chunk = min(chunk, (lbaint_t)(spans[span_index].start / SECTOR_SIZE) - done);
 		brain_progress_update(load_cost(done - skipped, skipped), read_cost);
-		if (blk_dread(device, image.start_sector + done, chunk,
-			      (void *)(SHARP_CE_LOAD_ADDRESS + done * SECTOR_SIZE)) != chunk) {
-			printf("bootsharpce: read failed\n");
-			return CMD_RET_FAILURE;
-		}
+		if (blk_dread(device, image->start_sector + done, chunk,
+			      (void *)(SHARP_CE_LOAD_ADDRESS + done * SECTOR_SIZE)) != chunk)
+			return -EIO;
 	}
 	brain_progress_update(read_cost, read_cost);
 	printf("Windows CE: read in %lu ms at %u Hz, %u spans (%lu KB) skipped and cleared in %lu ms\n",
 	       get_timer(started), mmc->clock, span_count, (unsigned long)(skipped / 2), clearing_time);
 	if (logging)
 		printf("Windows CE: %lu KB of the skipped spans held data before clearing\n", retained_words / 256);
+	brain_progress_step(patch_cost);
+	return 0;
+}
+
+static void clear_skip_spans(u32 image_length)
+{
+	struct nk_skip_span spans[MAXIMUM_SKIP_SPANS];
+	unsigned int span_count = brain_nk_bundle_skip_spans(image_length, spans, MAXIMUM_SKIP_SPANS);
+	unsigned int index;
+
+	for (index = 0; index < span_count; index++)
+		memset((void *)(SHARP_CE_LOAD_ADDRESS + spans[index].start), 0, spans[index].end - spans[index].start);
+	printf("Windows CE: %u spans cleared after generation\n", span_count);
+}
+
+static int load_and_generate(struct blk_desc *device, const struct sharp_ce_image *image)
+{
+	unsigned long started = get_timer(0);
+
+	brain_progress_begin(GENERATE_READ_UNITS + GENERATE_RUN_UNITS + GENERATE_SAVE_UNITS + GENERATE_PATCH_UNITS);
+	brain_progress_stage("First start: reading Windows CE");
+	brain_progress_step(GENERATE_READ_UNITS);
+	if (read_sectors(device, image, DIV_ROUND_UP(image->length, SECTOR_SIZE)))
+		return -EIO;
+	printf("Windows CE: whole image read in %lu ms for the generator\n", get_timer(started));
+	brain_progress_step(GENERATE_RUN_UNITS);
+	if (brain_nkgen_generate((const u8 *)SHARP_CE_LOAD_ADDRESS, image->length)) {
+		brain_bundle_fallback(image->length);
+		brain_progress_step(GENERATE_SAVE_UNITS);
+	} else {
+		brain_progress_step(GENERATE_SAVE_UNITS);
+		brain_nkgen_save();
+	}
+	clear_skip_spans(image->length);
+	brain_progress_stage("Patching");
+	brain_progress_step(GENERATE_PATCH_UNITS);
+	return 0;
+}
+
+int brain_nkgen_enter(ulong start, ulong length, ulong entry, struct nkgen_call *call)
+{
+	int (*generate)(struct nkgen_call *call) = (int (*)(struct nkgen_call *))entry;
+
+	flush_dcache_range(start, start + ALIGN(length, ARCH_DMA_MINALIGN));
+	invalidate_icache_all();
+	return generate(call);
+}
+
+static int do_bootsharpce(struct cmd_tbl *command, int flag, int argc, char *const argv[])
+{
+	struct sharp_ce_image image;
+	struct blk_desc *device;
+	struct mmc *mmc;
+	enum brain_bundle_choice choice = BRAIN_BUNDLE_READY;
+	unsigned long started;
+	bool logging, identified;
+	u32 identity;
+	int result;
+	const char *action = argc > 1 ? argv[1] : "";
+	void (*kernel_entry)(void) = (void (*)(void))SHARP_CE_LOAD_ADDRESS;
+
+	mmc = find_mmc_device(SHARP_CE_MMC_DEVICE);
+	if (!mmc || mmc_init(mmc)) {
+		printf("bootsharpce: internal MMC unavailable\n");
+		return CMD_RET_FAILURE;
+	}
+	device = mmc_get_blk_desc(mmc);
+	if (find_sharp_ce_image(device, &image)) {
+		printf("bootsharpce: no valid Windows CE image on the internal MMC\n");
+		return CMD_RET_FAILURE;
+	}
+	printf("Windows CE: slot %c, sector 0x" LBAF ", %u bytes\n", image.slot, image.start_sector, image.length);
+	identified = !read_identity(device, &image, &identity);
+	if (!strcmp(action, "info"))
+		return CMD_RET_SUCCESS;
+	if (!strcmp(action, "dump"))
+		return dump_image(device, &image) ? CMD_RET_FAILURE : CMD_RET_SUCCESS;
+	if (strcmp(action, "prepare")) {
+		dump_on_request(device, &image);
+		save_ce_debug_log();
+	}
+	logging = strcmp(action, "prepare") && brain_boot_log_requested();
+
+	brain_boot_status_begin(image.length, identified ? &identity : NULL);
+	brain_nk_bundle_clear();
+	if (strcmp(action, "stock"))
+		choice = brain_bundle_choose(image.length, !strcmp(action, "generate"));
+	if (choice == BRAIN_BUNDLE_GENERATE)
+		result = load_and_generate(device, &image);
+	else
+		result = load_with_skips(device, &image, mmc, logging);
+	if (result) {
+		printf("bootsharpce: read failed\n");
+		return CMD_RET_FAILURE;
+	}
 	if (memcmp((void *)(SHARP_CE_LOAD_ADDRESS + SHARP_CE_SIGNATURE_OFFSET), "ECEC", 4)) {
 		printf("bootsharpce: image has no ECEC signature\n");
 		return CMD_RET_FAILURE;
 	}
 
 	started = get_timer(0);
-	brain_progress_step(patch_cost);
 	brain_nk_bundle_apply((u8 *)SHARP_CE_LOAD_ADDRESS, image.length);
 	brain_progress_end();
 	printf("nk patches: %lu ms\n", get_timer(started));
@@ -376,6 +474,7 @@ static int do_bootsharpce(struct cmd_tbl *command, int flag, int argc, char *con
 		printf("Windows CE prepared in RAM; not started\n");
 		return CMD_RET_SUCCESS;
 	}
+	brain_boot_status_save();
 	writel(1, BSP_ARGS_INTERNAL_BOOT);
 	memset((void *)EBOOT_SCRATCH_START, 0, EBOOT_SCRATCH_END - EBOOT_SCRATCH_START);
 	brain_report_hardware_changes();
@@ -392,10 +491,12 @@ static int do_bootsharpce(struct cmd_tbl *command, int flag, int argc, char *con
 
 U_BOOT_CMD(bootsharpce, 2, 0, do_bootsharpce,
 	   "boot Sharp's Windows CE from the internal MMC (read only)",
-	   "[info|dump|stock]\n"
-	   "    - load the slot EBOOT would boot, patch it from " CARD_DIRECTORY "/boot.nkp and start it\n"
-	   "    - 'stock' starts it unpatched\n"
-	   "    - 'info' only reports the slot; 'dump' writes it to " CARD_DIRECTORY "/nk-slot-<slot>.bin on the card\n"
+	   "[info|dump|stock|generate]\n"
+	   "    - load the slot EBOOT would boot, patch it from " CARD_DIRECTORY "/nk-<identity>/boot.nkp (made by\n"
+	   "      " CARD_DIRECTORY "/nkgen.bin when missing), nk-<length>/boot.nkp or boot.nkp, and start it\n"
+	   "    - 'stock' starts it unpatched; 'generate' remakes nk-<identity> first\n"
+	   "    - 'info' only reports the slot and identity\n"
+	   "    - 'dump' writes it to " CARD_DIRECTORY "/nk-slot-<slot>.bin on the card\n"
 	   "    - with " DUMP_MARKER " on the card, the slot is written there once before booting");
 
 static void set_boot_command(void)
