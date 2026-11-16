@@ -9,6 +9,7 @@ Files
 
 sharpce.c	bootsharpce, board_late_init, boot command
 nkpatch.c	boot.nkp bundle: skip spans, patches, module loads
+progress.c	progress bar: brain_progress_begin, _step, _update, _end
 hwstate.c	EBOOT register snapshot at entry, restored before the CE jump
 bootlog.c	savelog: console record to pwsh2-boot/uboot.log
 keyboard.c	I2C keyboard: console input and brainkey
@@ -35,9 +36,16 @@ SHARP_KEYBOARD_MATRIX_ENTER_COLUMN, _ROW	Enter's GPIOs (SH4 136, 134)
 Board code may provide (weak defaults do nothing):
 
 brain_board_late_init()	start a display, keyboard console, pin setup
-brain_menu_progress()	progress while loading
+brain_progress_bar_open()	place the progress bar and prepare the display
+brain_progress_bar_push()	show the bar's pixels, RGB565 rows
 brain_display_report()	log display state before the CE jump
 brain_display_refresh()	called while waiting for console input
+
+Progress is in caller-defined units. brain_progress_begin(total) opens the
+bar, brain_progress_step(units) gives the next part of the total to a step and
+brain_progress_update(done, total) reports within it. The bar is redrawn only
+when its filled width changes. bootsharpce weights the eMMC read, the
+skip-span clears and each boot.nkp section by estimated time.
 
 With CONFIG_SHARP_WINCE set, board code must leave EBOOT's clocks and pin mux
 as it can: CE expects them. pwsh2, pwsh4 and pwa7200 skip their early clock setup and

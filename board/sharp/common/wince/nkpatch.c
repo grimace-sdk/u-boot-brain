@@ -15,6 +15,9 @@
 #define MAXIMUM_EXTENSION	0x10000
 #define MAXIMUM_PATH_LENGTH	96
 #define MAXIMUM_LOADS		4
+#define TEXT_NS_PER_BYTE	700
+#define LOAD_US			133000
+#define LOAD_NS_PER_BYTE	150
 
 enum patch_pass { PASS_VERIFY, PASS_APPLY };
 
@@ -287,17 +290,67 @@ unsigned int brain_nk_bundle_skip_spans(u32 image_length, struct nk_skip_span *s
 	return count;
 }
 
-void brain_nk_bundle_apply(u8 *image, u32 image_length, unsigned int progress_start)
+static u32 text_cost(size_t length)
+{
+	return (u64)length * TEXT_NS_PER_BYTE / 1000;
+}
+
+static u32 load_cost(const char *text, const char *text_end)
+{
+	u32 cost = 0;
+	const char *line, *line_end;
+
+	for (line = text; line < text_end; line = line_end + 1) {
+		const char *cursor = line;
+		struct token first, offset_token, length_token;
+
+		line_end = memchr(line, '\n', text_end - line);
+		if (!line_end)
+			line_end = text_end;
+		if (next_token(&cursor, line_end, &first) && token_is(&first, "load") &&
+		    next_token(&cursor, line_end, &offset_token) && next_token(&cursor, line_end, &length_token))
+			cost += LOAD_US + (u64)simple_strtoul(length_token.start, NULL, 16) * LOAD_NS_PER_BYTE / 1000;
+	}
+	return cost;
+}
+
+static const char *first_section(void)
+{
+	const char *line;
+
+	for (line = bundle_text; line < bundle_text + bundle_length; line = line_end_of(line) + 1)
+		if (!strncmp(line, "patch ", 6))
+			return line;
+	return NULL;
+}
+
+u32 brain_nk_bundle_cost(void)
+{
+	const char *first;
+
+	if (!bundle_text)
+		return 0;
+	first = first_section();
+	if (!first)
+		return 0;
+	return text_cost(bundle_text + bundle_length - first) + load_cost(first, bundle_text + bundle_length);
+}
+
+void brain_nk_bundle_apply(u8 *image, u32 image_length)
 {
 	const char *line = bundle_text;
-	const char *section_name = NULL, *section_start = NULL;
+	const char *section_name = NULL, *section_start = NULL, *section_header = NULL;
+	const char *first_header;
 	size_t section_name_length = 0;
-	unsigned int sections = 0, section_index = 0, applied = 0;
+	unsigned int sections = 0, applied = 0;
+	u32 cost_total, loads_done = 0;
 	unsigned long started = get_timer(0);
 
 	zeroed_end = image_length;
 	if (!bundle_text)
 		return;
+	cost_total = brain_nk_bundle_cost();
+	first_header = first_section();
 	for (line = bundle_text; line < bundle_text + bundle_length; line = line_end_of(line) + 1)
 		if (!strncmp(line, "patch ", 6))
 			sections++;
@@ -307,7 +360,8 @@ void brain_nk_bundle_apply(u8 *image, u32 image_length, unsigned int progress_st
 		if (at_end || !strncmp(line, "patch ", 6)) {
 			if (section_start) {
 				struct patch_result result = { 0 };
-				size_t length = (at_end ? bundle_text + bundle_length : line) - section_start;
+				const char *section_end = at_end ? bundle_text + bundle_length : line;
+				size_t length = section_end - section_start;
 
 				if (run_patch_pass(section_start, length, image, image_length, PASS_VERIFY, &result)) {
 					clear_loads(&result);
@@ -319,11 +373,12 @@ void brain_nk_bundle_apply(u8 *image, u32 image_length, unsigned int progress_st
 					printf("nk patch %.*s: applied %u records, %u bytes\n", (int)section_name_length, section_name,
 					       result.records, result.bytes);
 				}
-				section_index++;
-				brain_menu_progress(progress_start + (1000 - progress_start) * section_index / sections, 1000);
+				loads_done += load_cost(section_header, section_end);
+				brain_progress_update(text_cost(section_end - first_header) + loads_done, cost_total);
 			}
 			if (at_end)
 				break;
+			section_header = line;
 			section_name = line + 6;
 			section_name_length = line_end_of(line) - section_name;
 			while (section_name_length && (section_name[section_name_length - 1] == '\r'))

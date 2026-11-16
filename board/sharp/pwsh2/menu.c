@@ -25,10 +25,10 @@
 #define LABEL_TOP		(TILE_TOP + TILE_SIZE + 8)
 #define LABEL_SCALE		2
 #define COUNTDOWN_TOP		458
-#define PROGRESS_LEFT		250
-#define PROGRESS_WIDTH		300
-#define PROGRESS_TOP		458
-#define PROGRESS_HEIGHT		12
+#define PROGRESS_LEFT		248
+#define PROGRESS_WIDTH		304
+#define PROGRESS_TOP		456
+#define PROGRESS_HEIGHT		16
 
 #define COLOUR_BLACK		0x0000
 #define COLOUR_WHITE		0xffff
@@ -195,21 +195,28 @@ static void draw_menu(int selected, int seconds_left)
 	brain_display_show(canvas);
 }
 
-void brain_menu_progress(unsigned int done, unsigned int total)
+int brain_progress_bar_open(struct brain_progress_bar *bar)
 {
-	int filled;
+	if (!menu_shown)
+		return -ENODEV;
+	draw_menu_body(menu_selected);
+	brain_display_show(canvas);
+	bar->left = PROGRESS_LEFT;
+	bar->top = PROGRESS_TOP;
+	bar->width = PROGRESS_WIDTH;
+	bar->height = PROGRESS_HEIGHT;
+	return 0;
+}
 
-	if (!menu_shown || !total)
-		return;
-	if (!done) {
-		draw_menu_body(menu_selected);
-		brain_display_show(canvas);
-	}
-	filled = (int)((u64)PROGRESS_WIDTH * done / total);
-	fill_rectangle(PROGRESS_LEFT - 2, PROGRESS_TOP - 2, PROGRESS_WIDTH + 4, PROGRESS_HEIGHT + 4, COLOUR_BLACK);
-	fill_rectangle(PROGRESS_LEFT, PROGRESS_TOP, PROGRESS_WIDTH, PROGRESS_HEIGHT, COLOUR_WHITE);
-	fill_rectangle(PROGRESS_LEFT, PROGRESS_TOP, filled, PROGRESS_HEIGHT, COLOUR_WINDOWS_BLUE);
-	brain_display_show_region(canvas, PROGRESS_LEFT - 2, PROGRESS_TOP - 2, PROGRESS_WIDTH + 4, PROGRESS_HEIGHT + 4);
+int brain_progress_bar_push(const u16 *pixels, const struct brain_progress_bar *bar)
+{
+	unsigned int row;
+
+	for (row = 0; row < bar->height; row++)
+		memcpy(&canvas[(bar->top + row) * CANVAS_WIDTH + bar->left], &pixels[row * bar->width],
+		       bar->width * sizeof(*pixels));
+	brain_display_show_region(canvas, bar->left, bar->top, bar->width, bar->height);
+	return 0;
 }
 
 static int read_key(void)

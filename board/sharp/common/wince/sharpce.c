@@ -32,7 +32,8 @@
 #define EBOOT_SCRATCH_START		0x400C1000
 #define EBOOT_SCRATCH_END		0x400E0000
 #define PROGRESS_CHUNK_SECTORS		6144
-#define READ_PROGRESS_PERMILLE		850
+#define READ_BYTES_PER_US		17
+#define CLEAR_BYTES_PER_US		400
 #define MAXIMUM_SKIP_SPANS		64
 #ifdef CONFIG_SHARP_WINCE_DEBUG_LOG
 #define CE_DEBUG_LOG_ADDRESS		0x40180000
@@ -168,13 +169,15 @@ static int read_image(struct blk_desc *device, const struct sharp_ce_image *imag
 {
 	lbaint_t done, chunk;
 
+	brain_progress_begin(sectors);
 	for (done = 0; done < sectors; done += chunk) {
 		chunk = min((lbaint_t)PROGRESS_CHUNK_SECTORS, sectors - done);
-		brain_menu_progress((u64)done * 1000 / sectors, 1000);
+		brain_progress_update(done, sectors);
 		if (blk_dread(device, image->start_sector + done, chunk,
 			      (void *)(SHARP_CE_LOAD_ADDRESS + done * SECTOR_SIZE)) != chunk)
 			return -EIO;
 	}
+	brain_progress_end();
 	return 0;
 }
 
@@ -262,14 +265,31 @@ static void save_ce_debug_log(void)
 }
 #endif
 
+static u32 load_cost(lbaint_t read_sectors, lbaint_t cleared_sectors)
+{
+	return (u64)read_sectors * SECTOR_SIZE / READ_BYTES_PER_US +
+	       (u64)cleared_sectors * SECTOR_SIZE / CLEAR_BYTES_PER_US;
+}
+
+static lbaint_t skipped_sectors(const struct nk_skip_span *spans, unsigned int span_count)
+{
+	lbaint_t sectors = 0;
+	unsigned int index;
+
+	for (index = 0; index < span_count; index++)
+		sectors += (spans[index].end - spans[index].start) / SECTOR_SIZE;
+	return sectors;
+}
+
 static int do_bootsharpce(struct cmd_tbl *command, int flag, int argc, char *const argv[])
 {
 	struct sharp_ce_image image;
 	struct blk_desc *device;
 	struct mmc *mmc;
-	lbaint_t done, chunk, skipped;
+	lbaint_t done, chunk, skipped, planned_skip;
 	struct nk_skip_span spans[MAXIMUM_SKIP_SPANS];
 	unsigned int span_count, span_index;
+	u32 read_cost, patch_cost;
 	unsigned long started, clearing_started, clearing_time, retained_words;
 	bool logging;
 	void *span_address;
@@ -303,6 +323,11 @@ static int do_bootsharpce(struct cmd_tbl *command, int flag, int argc, char *con
 	if (strcmp(action, "stock"))
 		brain_nk_bundle_load(image.length);
 	span_count = brain_nk_bundle_skip_spans(image.length, spans, MAXIMUM_SKIP_SPANS);
+	planned_skip = skipped_sectors(spans, span_count);
+	read_cost = load_cost(sectors - planned_skip, planned_skip);
+	patch_cost = brain_nk_bundle_cost();
+	brain_progress_begin(read_cost + patch_cost);
+	brain_progress_step(read_cost);
 	span_index = 0;
 	skipped = 0;
 	clearing_time = 0;
@@ -319,19 +344,20 @@ static int do_bootsharpce(struct cmd_tbl *command, int flag, int argc, char *con
 			memset(span_address, 0, chunk * SECTOR_SIZE);
 			clearing_time += get_timer(clearing_started);
 			skipped += chunk;
+			brain_progress_update(load_cost(done + chunk - skipped, skipped), read_cost);
 			continue;
 		}
 		chunk = min((lbaint_t)PROGRESS_CHUNK_SECTORS, sectors - done);
 		if (span_index < span_count)
 			chunk = min(chunk, (lbaint_t)(spans[span_index].start / SECTOR_SIZE) - done);
-		brain_menu_progress((u64)done * READ_PROGRESS_PERMILLE / sectors, 1000);
+		brain_progress_update(load_cost(done - skipped, skipped), read_cost);
 		if (blk_dread(device, image.start_sector + done, chunk,
 			      (void *)(SHARP_CE_LOAD_ADDRESS + done * SECTOR_SIZE)) != chunk) {
 			printf("bootsharpce: read failed\n");
 			return CMD_RET_FAILURE;
 		}
 	}
-	brain_menu_progress(READ_PROGRESS_PERMILLE, 1000);
+	brain_progress_update(read_cost, read_cost);
 	printf("Windows CE: read in %lu ms at %u Hz, %u spans (%lu KB) skipped and cleared in %lu ms\n",
 	       get_timer(started), mmc->clock, span_count, (unsigned long)(skipped / 2), clearing_time);
 	if (logging)
@@ -342,8 +368,9 @@ static int do_bootsharpce(struct cmd_tbl *command, int flag, int argc, char *con
 	}
 
 	started = get_timer(0);
-	brain_nk_bundle_apply((u8 *)SHARP_CE_LOAD_ADDRESS, image.length, READ_PROGRESS_PERMILLE);
-	brain_menu_progress(1000, 1000);
+	brain_progress_step(patch_cost);
+	brain_nk_bundle_apply((u8 *)SHARP_CE_LOAD_ADDRESS, image.length);
+	brain_progress_end();
 	printf("nk patches: %lu ms\n", get_timer(started));
 	if (!strcmp(action, "prepare")) {
 		printf("Windows CE prepared in RAM; not started\n");
@@ -378,8 +405,14 @@ static void set_boot_command(void)
 	env_set("bootcmd", CONFIG_SHARP_WINCE_BOOTCMD);
 }
 
-__weak void brain_menu_progress(unsigned int done, unsigned int total)
+__weak int brain_progress_bar_open(struct brain_progress_bar *bar)
 {
+	return -ENODEV;
+}
+
+__weak int brain_progress_bar_push(const u16 *pixels, const struct brain_progress_bar *bar)
+{
+	return 0;
 }
 
 __weak void brain_display_report(void)
