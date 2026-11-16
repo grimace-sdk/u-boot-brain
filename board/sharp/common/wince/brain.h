@@ -13,6 +13,19 @@ struct nk_skip_span {
 	u32 end;
 };
 
+#define BRAIN_KEY_NONE		0
+#define BRAIN_KEY_PREVIOUS	1
+#define BRAIN_KEY_NEXT		2
+#define BRAIN_KEY_SELECT	3
+#define BRAIN_KEY_BACK		4
+
+#define BRAIN_PORTRAIT_BUFFER	0x44100000
+
+struct brain_screen {
+	unsigned int width;
+	unsigned int height;
+};
+
 struct brain_progress_bar {
 	unsigned int left;
 	unsigned int top;
@@ -24,9 +37,14 @@ int brain_display_init(void);
 void brain_display_hold(bool hold);
 void brain_display_refresh(void);
 void brain_display_report(void);
-void brain_display_show(const u16 *canvas);
-void brain_display_show_region(const u16 *canvas, unsigned int left, unsigned int top,
-			       unsigned int width, unsigned int height);
+
+int brain_screen_open(struct brain_screen *screen, u16 *background);
+int brain_screen_push(const u16 *canvas, unsigned int left, unsigned int top, unsigned int width,
+		      unsigned int height);
+void brain_portrait_push(unsigned int rows, unsigned int columns);
+
+int brain_keys_poll(void);
+bool brain_keys_held(void);
 
 int brain_keyboard_init(void);
 

@@ -26,9 +26,34 @@ config SHARP_WINCE_DEBUG_LOG
 
 config SHARP_WINCE_BOOTCMD
 	string "Boot command"
-	default "bootsharpce; savelog; run linux_boot"
+	default "brainmenu; savelog"
 	help
 	  Replaces bootcmd. The previous bootcmd is kept as linux_boot.
+
+config SHARP_WINCE_PROFILE
+	string "Profile folder on the card"
+	default ""
+	help
+	  brainmenu reads pwsh2-boot/PROFILE/menu.txt before
+	  pwsh2-boot/menu.txt.
+
+config SHARP_PANEL_PORTRAIT
+	bool "Menu on a portrait LCDIF panel as EBOOT left it"
+	help
+	  Draws the menu on a 480-column panel that EBOOT left in LCDIF
+	  system mode with its splash at 0x40100000, one panel page per
+	  landscape column.
+
+config SHARP_PANEL_PAGES
+	int "Panel pages"
+	depends on SHARP_PANEL_PORTRAIT
+	default 800
+
+config SHARP_PANEL_FULL_COLUMNS
+	bool "Write only full-column windows"
+	depends on SHARP_PANEL_PORTRAIT
+	help
+	  For panels that shear narrow column windows.
 
 config SHARP_KEYBOARD
 	bool "Brain I2C keyboard"

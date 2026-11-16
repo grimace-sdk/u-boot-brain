@@ -129,6 +129,7 @@ void brain_board_late_init(void)
 	if (IS_ENABLED(CONFIG_SHARP_KEYBOARD)) {
 		mxs_iomux_setup_pad(MX28_PAD_I2C0_SCL__I2C0_SCL);
 		mxs_iomux_setup_pad(MX28_PAD_I2C0_SDA__I2C0_SDA);
+		brain_keyboard_init();
 	}
 }
 #endif

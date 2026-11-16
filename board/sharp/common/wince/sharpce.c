@@ -405,16 +405,6 @@ static void set_boot_command(void)
 	env_set("bootcmd", CONFIG_SHARP_WINCE_BOOTCMD);
 }
 
-__weak int brain_progress_bar_open(struct brain_progress_bar *bar)
-{
-	return -ENODEV;
-}
-
-__weak int brain_progress_bar_push(const u16 *pixels, const struct brain_progress_bar *bar)
-{
-	return 0;
-}
-
 __weak void brain_display_report(void)
 {
 }
