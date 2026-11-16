@@ -24,6 +24,7 @@
 #include <miiphy.h>
 #include <netdev.h>
 #include <errno.h>
+#include "../common/wince/brain.h"
 
 #include "../common/lcd.h"
 #include "../common/cpu_clkdiv.h"
@@ -118,4 +119,18 @@ lcd_config_t get_lcd_config()
 {
 	return lcd_config;
 }
+#endif
+
+#ifdef CONFIG_SHARP_KEYBOARD_MATRIX
+const struct brain_matrix_key brain_matrix_keys[] = {
+	{ 136, 134, BRAIN_KEY_SELECT, "Enter" },
+	{ 82, 134, BRAIN_KEY_SELECT, "Space" },
+	{ 83, 134, BRAIN_KEY_PREVIOUS, "Up" },
+	{ 84, 135, BRAIN_KEY_PREVIOUS, "Left" },
+	{ 85, 134, BRAIN_KEY_NEXT, "Down" },
+	{ 84, 134, BRAIN_KEY_NEXT, "Right" },
+	{ 83, 135, BRAIN_KEY_BACK, "Back" },
+};
+
+const unsigned int brain_matrix_key_count = ARRAY_SIZE(brain_matrix_keys);
 #endif

@@ -26,6 +26,16 @@ struct brain_screen {
 	unsigned int height;
 };
 
+struct brain_matrix_key {
+	unsigned int column;
+	unsigned int row;
+	int key;
+	const char *name;
+};
+
+extern const struct brain_matrix_key brain_matrix_keys[];
+extern const unsigned int brain_matrix_key_count;
+
 struct brain_progress_bar {
 	unsigned int left;
 	unsigned int top;
