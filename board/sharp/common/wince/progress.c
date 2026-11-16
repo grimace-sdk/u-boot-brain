@@ -18,6 +18,7 @@ static u32 progress_total;
 static u32 step_start;
 static u32 step_units;
 static u32 steps_end;
+static unsigned long last_draw;
 static unsigned int bar_pushes;
 static unsigned long bar_push_us;
 
@@ -41,6 +42,7 @@ static void draw_bar(unsigned int filled)
 	if (brain_progress_bar_push(bar_pixels, &bar))
 		bar_shown = false;
 	drawn_width = filled;
+	last_draw = get_timer(0);
 	bar_pushes++;
 	bar_push_us += timer_get_us() - started;
 }
@@ -81,7 +83,7 @@ void brain_progress_update(u32 done, u32 total)
 	if (position > progress_total)
 		position = progress_total;
 	filled = position * track_width / progress_total;
-	if (filled != drawn_width)
+	if (filled != drawn_width && (!bar.interval_ms || get_timer(last_draw) >= bar.interval_ms))
 		draw_bar(filled);
 }
 

@@ -24,6 +24,7 @@ struct nk_skip_span {
 struct brain_screen {
 	unsigned int width;
 	unsigned int height;
+	unsigned int update_interval_ms;
 };
 
 struct brain_matrix_key {
@@ -41,6 +42,7 @@ struct brain_progress_bar {
 	unsigned int top;
 	unsigned int width;
 	unsigned int height;
+	unsigned int interval_ms;
 };
 
 int brain_display_init(void);

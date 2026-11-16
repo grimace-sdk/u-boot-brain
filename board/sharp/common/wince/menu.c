@@ -229,6 +229,7 @@ int brain_progress_bar_open(struct brain_progress_bar *bar)
 	bar->height = layout.progress_height;
 	bar->left = (screen.width - bar->width) / 2;
 	bar->top = layout.progress_top;
+	bar->interval_ms = screen.update_interval_ms;
 	return 0;
 }
 

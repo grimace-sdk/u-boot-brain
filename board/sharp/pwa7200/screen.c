@@ -113,6 +113,7 @@ int brain_screen_open(struct brain_screen *screen, u16 *background)
 	}
 	screen->width = SCREEN_WIDTH;
 	screen->height = SCREEN_HEIGHT;
+	screen->update_interval_ms = 0;
 	memcpy(background, (const void *)EBOOT_SPLASH, SCREEN_PIXELS * sizeof(*background));
 	return 0;
 }

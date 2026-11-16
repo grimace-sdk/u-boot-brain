@@ -16,6 +16,7 @@
 #define PANEL_COLUMN_ADDRESS	0x2a
 #define PANEL_PAGE_ADDRESS	0x2b
 #define LCDIF_TIMEOUT		0x100000
+#define FULL_FRAME_INTERVAL_MS	200
 
 static unsigned int push_count;
 static unsigned int lcdif_timeouts;
@@ -95,6 +96,7 @@ int brain_screen_open(struct brain_screen *screen, u16 *background)
 	}
 	screen->width = PANEL_PAGES;
 	screen->height = PANEL_COLUMNS;
+	screen->update_interval_ms = IS_ENABLED(CONFIG_SHARP_PANEL_FULL_FRAMES) ? FULL_FRAME_INTERVAL_MS : 0;
 	for (y = 0; y < PANEL_COLUMNS; y++)
 		for (x = 0; x < PANEL_PAGES; x++)
 			*background++ = splash[x * PANEL_COLUMNS + (PANEL_COLUMNS - 1 - y)];
@@ -106,13 +108,16 @@ int brain_screen_push(const u16 *canvas, unsigned int left, unsigned int top, un
 {
 	struct mxs_lcdif_regs *lcdif = (struct mxs_lcdif_regs *)MXS_LCDIF_BASE;
 	u16 *portrait = (u16 *)BRAIN_PORTRAIT_BUFFER;
-	bool full_screen = !left && !top && width == PANEL_PAGES && height == PANEL_COLUMNS;
+	bool full_screen;
 	unsigned int first_column, row, column;
 
-	if (IS_ENABLED(CONFIG_SHARP_PANEL_FULL_COLUMNS)) {
+	if (IS_ENABLED(CONFIG_SHARP_PANEL_FULL_FRAMES)) {
+		left = 0;
 		top = 0;
+		width = PANEL_PAGES;
 		height = PANEL_COLUMNS;
 	}
+	full_screen = !left && !top && width == PANEL_PAGES && height == PANEL_COLUMNS;
 	first_column = PANEL_COLUMNS - top - height;
 	for (row = left; row < left + width; row++)
 		for (column = first_column; column < first_column + height; column++)

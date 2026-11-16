@@ -49,11 +49,13 @@ config SHARP_PANEL_PAGES
 	depends on SHARP_PANEL_PORTRAIT
 	default 800
 
-config SHARP_PANEL_FULL_COLUMNS
-	bool "Write only full-column windows"
+config SHARP_PANEL_FULL_FRAMES
+	bool "Write only full frames"
 	depends on SHARP_PANEL_PORTRAIT
 	help
-	  For panels that shear narrow column windows.
+	  For panels that corrupt writes to a partial window. Region updates
+	  send the whole frame, and progress bar updates are limited to
+	  five a second.
 
 config SHARP_KEYBOARD
 	bool "Brain I2C keyboard"
