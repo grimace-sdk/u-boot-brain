@@ -54,6 +54,7 @@
 #define STAMP_LIMIT		0x4000
 #define STATUS_LIMIT		0x2000
 #define GENERATOR_UNITS		1000
+#define KNOWN_DIRECTORIES	16
 
 struct nkgen_output {
 	const char *path;
@@ -144,6 +145,8 @@ static char *generator_log;
 static size_t generator_log_length;
 static const struct generator_stage *current_stage;
 static unsigned long generated_ms;
+static char known_directories[KNOWN_DIRECTORIES][PATH_LENGTH];
+static unsigned int known_directory_count;
 
 static u32 le32(const u8 *bytes)
 {
@@ -208,6 +211,16 @@ static int card_size(const char *path, loff_t *size)
 	return fs_size(path, size);
 }
 
+static bool directory_known(const char *directory)
+{
+	unsigned int index;
+
+	for (index = 0; index < known_directory_count; index++)
+		if (!strcmp(known_directories[index], directory))
+			return true;
+	return false;
+}
+
 static void card_make_directories(const char *path)
 {
 	char directory[PATH_LENGTH];
@@ -215,8 +228,12 @@ static void card_make_directories(const char *path)
 
 	for (slash = strchr(path, '/'); slash; slash = strchr(slash + 1, '/')) {
 		snprintf(directory, sizeof(directory), "%.*s", (int)(slash - path), path);
+		if (directory_known(directory))
+			continue;
 		if (!card_select() && !fs_exists(directory) && !card_select())
 			fs_mkdir(directory);
+		if (known_directory_count < KNOWN_DIRECTORIES)
+			strlcpy(known_directories[known_directory_count++], directory, PATH_LENGTH);
 	}
 }
 
@@ -314,6 +331,7 @@ void brain_boot_status_begin(u32 image_length, const u32 *identity)
 
 	memset(&status, 0, sizeof(status));
 	status.steps = steps;
+	known_directory_count = 0;
 	status.image_length = image_length;
 	status.image = "";
 	status.bundle = "none";
@@ -696,6 +714,7 @@ int brain_nkgen_generate(const u8 *image, u32 image_length)
 
 	generator_log_length = 0;
 	current_stage = NULL;
+	known_directory_count = 0;
 	memset(map_sysmem(NKGEN_ADDRESS + le32(header + 20), le32(header + 24)), 0, le32(header + 24));
 	memset(&call, 0, sizeof(call));
 	call.magic = NKGEN_CALL_MAGIC;
@@ -792,16 +811,40 @@ static int write_stamp(void)
 	return result;
 }
 
+static bool card_file_matches(const struct nkgen_output *output)
+{
+	loff_t size = 0, read = 0;
+	bool matches;
+	u8 *buffer;
+
+	if (card_size(output->path, &size) || size != output->length)
+		return false;
+	buffer = malloc_cache_aligned(output->length ? output->length : 1);
+	if (!buffer)
+		return false;
+	matches = !card_read(output->path, buffer, output->length, &read) && read == output->length &&
+		  crc32(0, buffer, output->length) == output->crc32;
+	free(buffer);
+	return matches;
+}
+
 int brain_nkgen_save(void)
 {
 	char path[PATH_LENGTH];
 	char line[PATH_LENGTH + 64];
-	unsigned long started = get_timer(0);
-	u64 total = 0, done = 0;
-	u32 index, written;
+	unsigned long started = get_timer(0), file_started;
+	u64 total = 0, done = 0, bytes_written = 0;
+	u32 index, written, files_written = 0;
+	bool *wrote;
 	int result = 0;
 
 	brain_progress_stage("Saving to card");
+	known_directory_count = 0;
+	wrote = calloc(call.output_count ? call.output_count : 1, sizeof(*wrote));
+	if (!wrote) {
+		set_error("no memory to save the outputs");
+		return -ENOMEM;
+	}
 	folder_path(path, sizeof(path), CACHE_STAMP_NAME);
 	card_unlink(path);
 	for (index = 0; index < call.output_count; index++)
@@ -810,19 +853,31 @@ int brain_nkgen_save(void)
 		const struct nkgen_output *output = &call.outputs[written];
 
 		brain_progress_update(done, total);
-		result = card_write(output->path, output->data, output->length);
+		file_started = get_timer(0);
+		if (card_file_matches(output)) {
+			snprintf(line, sizeof(line), "unchanged %s, %u bytes, checked in %lu ms", output->path,
+				 output->length, get_timer(file_started));
+		} else {
+			result = card_write(output->path, output->data, output->length);
+			wrote[written] = true;
+			files_written++;
+			bytes_written += output->length;
+			snprintf(line, sizeof(line), "wrote %s, %u bytes in %lu ms, result %d", output->path, output->length,
+				 get_timer(file_started), result);
+		}
 		done += output->length;
-		snprintf(line, sizeof(line), "wrote %s, %u bytes, result %d", output->path, output->length, result);
 		log_line(line);
 	}
 	brain_progress_update(total, total);
 	if (result) {
 		for (index = 0; index < written; index++)
-			if (index == written - 1 || in_folder(call.outputs[index].path))
+			if (wrote[index] && (index == written - 1 || in_folder(call.outputs[index].path)))
 				card_unlink(call.outputs[index].path);
 		set_error("writing %s failed (%d)", call.outputs[written - 1].path, result);
 	}
-	snprintf(line, sizeof(line), "generated in %lu ms, saved in %lu ms", generated_ms, get_timer(started));
+	free(wrote);
+	snprintf(line, sizeof(line), "generated in %lu ms, saved in %lu ms: %u of %u files written, %llu bytes",
+		 generated_ms, get_timer(started), files_written, call.output_count, bytes_written);
 	log_line(line);
 	folder_path(path, sizeof(path), GENERATOR_LOG_NAME);
 	if (generator_log)
