@@ -233,16 +233,31 @@ int brain_progress_bar_open(struct brain_progress_bar *bar)
 	return 0;
 }
 
+static void draw_outlined_text(const char *text, int top, int scale)
+{
+	int left = (int)screen.width / 2 - (int)strlen(text) * VIDEO_FONT_WIDTH * scale / 2;
+	int offset_x, offset_y;
+
+	for (offset_y = -1; offset_y <= 1; offset_y++)
+		for (offset_x = -1; offset_x <= 1; offset_x++)
+			if (offset_x || offset_y)
+				draw_text(text, left + offset_x, top + offset_y, scale, COLOUR_BLACK);
+	draw_text(text, left, top, scale, COLOUR_WHITE);
+}
+
 int brain_progress_label_push(const char *text)
 {
-	int height = VIDEO_FONT_HEIGHT * layout.label_scale;
+	int top = layout.tile_top + layout.tile_size + HIGHLIGHT_WIDTH;
+	int height = layout.progress_top - top;
+	int scale = layout.label_scale;
 
-	if (!menu_shown)
+	if (!menu_shown || height <= 0)
 		return -ENODEV;
-	memcpy(&canvas[layout.label_top * screen.width], &background[layout.label_top * screen.width],
-	       height * screen.width * sizeof(*canvas));
-	draw_centred_text(text, screen.width / 2, layout.label_top + (height - VIDEO_FONT_HEIGHT) / 2, 1, COLOUR_BLACK);
-	return brain_screen_push(canvas, 0, layout.label_top, screen.width, height);
+	if ((int)strlen(text) * VIDEO_FONT_WIDTH * scale > (int)screen.width || VIDEO_FONT_HEIGHT * scale + 2 > height)
+		scale = 1;
+	memcpy(&canvas[top * screen.width], &background[top * screen.width], height * screen.width * sizeof(*canvas));
+	draw_outlined_text(text, top + (height - VIDEO_FONT_HEIGHT * scale) / 2, scale);
+	return brain_screen_push(canvas, 0, top, screen.width, height);
 }
 
 int brain_progress_bar_push(const u16 *pixels, const struct brain_progress_bar *bar)
