@@ -288,9 +288,11 @@ int brain_nk_bundle_load_from(const char *directory)
 {
 	unsigned long started = get_timer(0);
 	loff_t size = 0;
+	int result;
 
 	brain_nk_bundle_clear();
-	return use_card_bundle(read_bundle(directory, &size), size, started);
+	result = read_bundle(directory, &size);
+	return use_card_bundle(result, size, started);
 }
 
 void brain_nk_bundle_use_ram(const char *text, size_t length, const char *directory, const struct brain_ram_file *files,
