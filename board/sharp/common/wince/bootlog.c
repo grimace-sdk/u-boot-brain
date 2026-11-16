@@ -26,9 +26,9 @@ static void collect_console_record(void)
 	if (!boot_log)
 		return;
 	while (console_record_avail() > 0) {
-		length = console_record_readline(line, sizeof(line));
-		if (length < 0)
+		if (console_record_readline(line, sizeof(line)) <= 0)
 			break;
+		length = strlen(line);
 		if (boot_log_length + length + 1 > BOOT_LOG_LIMIT)
 			break;
 		memcpy(boot_log + boot_log_length, line, length);
