@@ -28,7 +28,7 @@ Per-device values are Kconfig options set in the defconfig:
 SHARP_WINCE_BSP_ARGS	EBOOT's internal boot flag (SH2, SH4 0x400F3060, A7300 0x400F6C60)
 SHARP_WINCE_SLOT_B	fall back to the second image slot
 SHARP_WINCE_DEBUG_LOG	save CE's RAM debug log to the card
-SHARP_WINCE_MODEL	uboot= in pwsh2-boot/boot-status.txt (pwsh2, pwa7300, pwsh4)
+SHARP_WINCE_MODEL	uboot= in pwsh2-boot/boot-status.txt (pwsh2, pwa7300, pwsh3, pwsh4)
 SHARP_WINCE_NKGEN_*	generator, pak and arena addresses (0x42000000, 0x42100000,
 			0x42800000, 24 MB), the same in every build
 SHARP_WINCE_BOOTCMD	replaces bootcmd; the old one is kept as linux_boot

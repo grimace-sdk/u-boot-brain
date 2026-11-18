@@ -42,7 +42,7 @@ config SHARP_WINCE_MODEL
 	default ""
 	help
 	  Written as uboot= in pwsh2-boot/boot-status.txt, so the status
-	  says which U-Boot build booted (pwsh2, pwa7300, pwsh4).
+	  says which U-Boot build booted (pwsh2, pwa7300, pwsh3, pwsh4).
 
 config SHARP_WINCE_NKGEN_ADDRESS
 	hex "Load address of pwsh2-boot/nkgen.bin"
