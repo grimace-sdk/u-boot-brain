@@ -24,6 +24,7 @@
 #include <miiphy.h>
 #include <netdev.h>
 #include <errno.h>
+#include "../common/wince/brain.h"
 
 #include "../common/lcd.h"
 #include "../common/cpu_clkdiv.h"
@@ -35,17 +36,19 @@ DECLARE_GLOBAL_DATA_PTR;
  */
 int board_early_init_f(void)
 {
-	/* IO0 clock at 480MHz */
-	mxs_set_ioclk(MXC_IOCLK0, 480000);
-	/* IO1 clock at 480MHz */
-	mxs_set_ioclk(MXC_IOCLK1, 480000);
+	if (!IS_ENABLED(CONFIG_SHARP_WINCE)) {
+		/* IO0 clock at 480MHz */
+		mxs_set_ioclk(MXC_IOCLK0, 480000);
+		/* IO1 clock at 480MHz */
+		mxs_set_ioclk(MXC_IOCLK1, 480000);
 
-	/* SSP0 clock at 96MHz */
-	mxs_set_sspclk(MXC_SSPCLK0, 96000, 0);
-	/* SSP1 clock at 96MHz */
-	mxs_set_sspclk(MXC_SSPCLK1, 96000, 0);
-	/* set cpu clock div 1(480MHz)*/
-	mxs_set_divcpu(1);
+		/* SSP0 clock at 96MHz */
+		mxs_set_sspclk(MXC_SSPCLK0, 96000, 0);
+		/* SSP1 clock at 96MHz */
+		mxs_set_sspclk(MXC_SSPCLK1, 96000, 0);
+		/* set cpu clock div 1(480MHz)*/
+		mxs_set_divcpu(1);
+	}
 
 #ifdef CONFIG_CMD_USB
 	mxs_iomux_setup_pad(MX28_PAD_SSP2_SS1__USB1_OVERCURRENT);
@@ -84,11 +87,18 @@ static int brain_mmc_cd(int id)
 
 int board_mmc_init(struct bd_info *bis)
 {
+	if (IS_ENABLED(CONFIG_SHARP_WINCE)) {
+		mxs_set_ioclk(MXC_IOCLK0, 480000);
+		mxs_set_sspclk(MXC_SSPCLK0, 96000, 0);
+	}
 	mxsmmc_initialize(bis, 0, brain_mmc_wp, brain_mmc_cd);
+	if (IS_ENABLED(CONFIG_SHARP_WINCE))
+		mxs_set_sspclk(MXC_SSPCLK1, 96000, 0);
 	mxsmmc_initialize(bis, 1, brain_mmc_wp, brain_mmc_cd);
 
 	/* Turn on the SD*/
-	gpio_direction_output(MX28_PAD_SSP2_SS2__GPIO_2_21, 0);
+	if (!IS_ENABLED(CONFIG_SHARP_WINCE))
+		gpio_direction_output(MX28_PAD_SSP2_SS2__GPIO_2_21, 0);
 	return 0;
 }
 #endif
@@ -109,4 +119,18 @@ lcd_config_t get_lcd_config()
 {
 	return lcd_config;
 }
+#endif
+
+#ifdef CONFIG_SHARP_KEYBOARD_MATRIX
+const struct brain_matrix_key brain_matrix_keys[] = {
+	{ 84, 135, BRAIN_KEY_SELECT, "Enter" },
+	{ 82, 134, BRAIN_KEY_SELECT, "Space" },
+	{ 84, 134, BRAIN_KEY_PREVIOUS, "Up" },
+	{ 83, 134, BRAIN_KEY_PREVIOUS, "Left" },
+	{ 85, 134, BRAIN_KEY_NEXT, "Down" },
+	{ 136, 134, BRAIN_KEY_NEXT, "Right" },
+	{ 83, 135, BRAIN_KEY_BACK, "Back" },
+};
+
+const unsigned int brain_matrix_key_count = ARRAY_SIZE(brain_matrix_keys);
 #endif
